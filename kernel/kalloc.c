@@ -80,3 +80,20 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+uint64
+getFreeBytes()
+{
+  struct run *r;
+
+  acquire(&kmem.lock);
+  r = kmem.freelist;
+  uint64 count = 0;
+  while(r) {
+    count++;
+    r = r->next;
+  }
+  release(&kmem.lock);
+  // 如果不足4096，是不是需要加进来呢？
+  return count * 4096;
+}

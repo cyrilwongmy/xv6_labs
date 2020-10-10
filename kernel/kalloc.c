@@ -94,6 +94,6 @@ getFreeBytes()
     r = r->next;
   }
   release(&kmem.lock);
-  // 如果不足4096，是不是需要加进来呢？
+  // 如果不足4096，不需要加进来
   return count * 4096;
 }

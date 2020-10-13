@@ -85,6 +85,7 @@ allocpid() {
   return pid;
 }
 
+extern pagetable_t kernel_pagetable;
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -127,6 +128,28 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // produce a own copy of kernel page table for a new process
+  p->kpagetable = userKernelpgtbl();
+  if (p->kpagetable == 0)
+  {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  // find the physical address of the process's own kernel stack
+
+  uint64 va = p->kstack;
+  uint64 pa;
+
+  if((pa = kvmpa(va)) == 0) {
+    panic("not mapped kstack for my process!");
+  }
+  // userKernelMap(p->kpagetable, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+  if(mappages(p->kpagetable, va, PGSIZE, pa, (PTE_V | PTE_W | PTE_R)) < 0) {
+    panic("Map kernel stack problem");
+  }
+
   return p;
 }
 
@@ -136,6 +159,9 @@ found:
 static void
 freeproc(struct proc *p)
 {
+  // free p->kpagetable;
+  if(p->kpagetable)
+    proc_freekernelpagetable(p->kpagetable);
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
@@ -150,6 +176,7 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
 }
 
 // Create a user page table for a given process,
@@ -474,7 +501,12 @@ scheduler(void)
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
+        // switch h/w page table register to the process's 
+        // own copy of kernel page table 
+        // and enable paging.
+        userKernelhart(p->kpagetable);
 
+        kvminithart();
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
@@ -482,6 +514,9 @@ scheduler(void)
         found = 1;
       }
       release(&p->lock);
+    }
+    if(found == 0) {
+      kvminithart();
     }
 #if !defined (LAB_FS)
     if(found == 0) {
@@ -696,4 +731,21 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+extern char etext[];
+// Free a process's copy kernel page table,
+// and not free the leaf physical memory pages.
+void
+proc_freekernelpagetable(pagetable_t kpagetable)
+{
+  // struct proc *curproc = myproc();
+  // uint64 va = curproc->kstack;
+  // printf("kstack=%p\n", va);
+  // printf("kpagetalbe= %p\n", kpagetable);
+
+  // uint64 pa = kvmpa(va);
+  // printf("kstack, pa=%p\n", pa);
+  // uvmunmap(kpagetable, va, 1, 0);
+  freekernelwalk(kpagetable);
 }

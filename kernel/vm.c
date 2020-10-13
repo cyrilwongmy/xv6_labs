@@ -182,7 +182,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
+    if((*pte & PTE_V) == 0) 
       panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
@@ -440,3 +440,124 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+  printwalk(pagetable, 3);
+}
+
+void
+printwalk(pagetable_t pagetable, int curLevel)
+{
+
+  for (int i = 0; i < 512; i++)
+  {
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+      // this PTE points to a lower-level page table.
+      uint64 child = PTE2PA(pte);
+      if(curLevel == 3) {          
+        printf("..%d: pte %p pa %p\n", i, pte, child);
+      } else if (curLevel == 2) {          
+        printf(".. ..%d: pte %p pa %p\n", i, pte, child);
+      }
+      int nextLevel = curLevel- 1;
+      printwalk((pagetable_t)child, nextLevel);
+    } else if(pte & PTE_V){
+      // leaf
+      uint64 child = PTE2PA(pte);
+      printf(".. .. ..%d: pte %p pa %p\n", i, pte, child);
+    }
+  }
+}
+
+
+pagetable_t
+userKernelpgtbl()
+{
+  // kalloc() return a physcial address.
+  pagetable_t user_kernelpgtbl = (pagetable_t) kalloc();
+  if(user_kernelpgtbl == 0)
+    return 0;
+  memset(user_kernelpgtbl, 0, PGSIZE);
+
+  // uart registers
+  userKernelMap(user_kernelpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+
+  // virtio mmio disk interface
+  userKernelMap(user_kernelpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+  // CLINT
+  userKernelMap(user_kernelpgtbl, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+
+  // PLIC
+  userKernelMap(user_kernelpgtbl, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+  // map kernel text executable and read-only.
+  userKernelMap(user_kernelpgtbl, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+
+  // map kernel data and the physical RAM we'll make use of.
+  userKernelMap(user_kernelpgtbl, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  userKernelMap(user_kernelpgtbl, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+
+  return user_kernelpgtbl;
+}
+
+void userKernelMap(pagetable_t userKerpgtbl, uint64 va, uint64 pa, uint64 sz, int perm)
+{
+  if(mappages(userKerpgtbl, va, sz, pa, perm) !=0)
+    panic("userKernelmap");
+}
+
+// switch h/w page table register to the process's 
+// own copy of kernel page table 
+// and enable paging.
+void userKernelhart(pagetable_t kpagetable) {
+  w_satp(MAKE_SATP(kpagetable));
+  sfence_vma();
+}
+
+
+// Recursively free page-table pages
+// All leaf mappings should be reserved.
+void 
+freekernelwalk(pagetable_t kpagetable)
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = kpagetable[i];
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+      // this PTE points to a lower-level page table.
+      uint64 child = PTE2PA(pte);
+      freekernelwalk((pagetable_t)child);
+      kpagetable[i] = 0;
+    } 
+  }
+  // test 
+  // vmprint(kpagetable);
+  kfree((void*)kpagetable);
+}
+
+
+// void
+// freekernelwalk(pagetable_t kpagetable) {
+//   // uvmunmap(kpagetable, UART0, 1, 0);
+//   // uvmunmap(kpagetable, VIRTIO0, 1, 0);
+//   // uvmunmap(kpagetable, CLINT, ((0x10000) / PGSIZE), 0);
+//   // uvmunmap(kpagetable, PLIC, (0x40000 / PGSIZE), 0);
+//   // uvmunmap(kpagetable, KERNBASE, PGROUNDUP((uint64)etext-KERNBASE) / PGSIZE, 0);
+//   // uvmunmap(kpagetable, (uint64)etext ,PGROUNDUP((uint64)etext) / PGSIZE, 0);
+//   // uvmunmap(kpagetable, TRAMPOLINE, 1, 0);
+//   // uvmunmap(kpagetable, 0, 1, 0);
+//   // uvmunmap(kpagetable, 0, 1, 0);
+
+//   // u map kernel page's kernel stack for each process
+//   freewalk(kpagetable);
+
+
+// }

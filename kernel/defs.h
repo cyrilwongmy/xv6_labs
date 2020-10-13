@@ -28,6 +28,8 @@ void            consputc(int);
 
 // exec.c
 int             exec(char*, char**);
+void            vmprint(pagetable_t);
+void            printwalk(pagetable_t, int);
 
 // file.c
 struct file*    filealloc(void);
@@ -92,6 +94,7 @@ int             fork(void);
 int             growproc(int);
 pagetable_t     proc_pagetable(struct proc *);
 void            proc_freepagetable(pagetable_t, uint64);
+void            proc_freekernelpagetable(pagetable_t);
 int             kill(int);
 struct cpu*     mycpu(void);
 struct cpu*     getmycpu(void);
@@ -159,7 +162,10 @@ int             uartgetc(void);
 
 // vm.c
 void            kvminit(void);
+pagetable_t     userKernelpgtbl(void);
+void            userKernelMap(pagetable_t, uint64, uint64, uint64, int);
 void            kvminithart(void);
+void            userKernelhart(pagetable_t);
 uint64          kvmpa(uint64);
 void            kvmmap(uint64, uint64, uint64, int);
 int             mappages(pagetable_t, uint64, uint64, uint64, int);
@@ -178,6 +184,7 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+void            freekernelwalk(pagetable_t kpagetable);
 
 // plic.c
 void            plicinit(void);

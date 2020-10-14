@@ -18,7 +18,7 @@ exec(char *path, char **argv)
   struct elfhdr elf;
   struct inode *ip;
   struct proghdr ph;
-  pagetable_t pagetable = 0, oldpagetable;
+  pagetable_t pagetable = 0, ukvmpagetable = 0,oldpagetable;
   struct proc *p = myproc();
 
   begin_op();
@@ -37,6 +37,8 @@ exec(char *path, char **argv)
 
   if((pagetable = proc_pagetable(p)) == 0)
     goto bad;
+
+  
 
   // Load program into memory.
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
@@ -111,9 +113,13 @@ exec(char *path, char **argv)
   // Commit to the user image.
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
+  
+  uvmunmap(p->kpagetable, 0, p->sz / PGSIZE, 0);
   p->sz = sz;
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
+
+  uvmcopy2ukvm(p->pagetable, p->kpagetable, 0, p->sz);
   proc_freepagetable(oldpagetable, oldsz);
 
   if(p->pid==1) {
@@ -125,6 +131,8 @@ exec(char *path, char **argv)
  bad:
   if(pagetable)
     proc_freepagetable(pagetable, sz);
+  if (ukvmpagetable)
+    proc_freekernelpagetable(ukvmpagetable);
   if(ip){
     iunlockput(ip);
     end_op();

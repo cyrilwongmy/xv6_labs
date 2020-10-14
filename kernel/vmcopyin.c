@@ -26,6 +26,7 @@ statscopyin(char *buf, int sz) {
 // Copy from user to kernel.
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.
+extern pte_t* walk(pagetable_t, uint64, int);
 int
 copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {

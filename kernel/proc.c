@@ -137,8 +137,8 @@ found:
     return 0;
   }
 
-  // find the physical address of the process's own kernel stack
 
+  // find the physical address of the process's own kernel stack
   uint64 va = p->kstack;
   uint64 pa;
 
@@ -149,6 +149,13 @@ found:
   if(mappages(p->kpagetable, va, PGSIZE, pa, (PTE_V | PTE_W | PTE_R)) < 0) {
     panic("Map kernel stack problem");
   }
+
+  // add mappings for user addresses to
+  // each process's kernel page table
+
+  
+  // 找到p->pagetable保存的东西，根据地址把每个东西复制到p->kpagetable的虚拟地址
+  // uvmcopy2ukvm(p->pagetable, p->kpagetable, p->sz);
 
   return p;
 }
@@ -247,6 +254,8 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+  if(uvmcopy2ukvm(p->pagetable, p->kpagetable, 0, p->sz) == -1)
+    panic("copy falut!!!");
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -270,12 +279,20 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+    // prevent user process from growing larger than
+    // the PLIC address
+    if (sz > PLIC || sz + n > PLIC)
+    {
       return -1;
+    } else {
+      if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+        return -1;
+      }
     }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
+  uvmcopy2ukvm(p->pagetable, p->kpagetable, p->sz, sz);
   p->sz = sz;
   return 0;
 }
@@ -319,8 +336,12 @@ fork(void)
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
+  if(uvmcopy2ukvm(np->pagetable, np->kpagetable, 0, np->sz) < 0) {
+    return -1;
+  }
 
   np->state = RUNNABLE;
+
 
   release(&np->lock);
 
@@ -500,11 +521,11 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        userKernelhart(p->kpagetable);
         swtch(&c->context, &p->context);
         // switch h/w page table register to the process's 
         // own copy of kernel page table 
         // and enable paging.
-        userKernelhart(p->kpagetable);
 
         kvminithart();
         // Process is done running for now.

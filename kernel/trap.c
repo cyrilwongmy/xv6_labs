@@ -77,8 +77,54 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2) {
     yield();
+    // Question1. p->passed_ticks = 0, do or not?
+    // Tip1. do not check func ptr is 0, 
+    // because address of func ptr could be in the address of 0;
+    if(p->intervals != 0 && p->passed_ticks % p->intervals == 0) {
+        if (p->exitFlag == 1)
+        {
+          p->prev_epc = p->trapframe->epc; // save pc
+          p->prev_a0 = p->trapframe->a0; // save a0
+          /* save other 30 regs */
+          p->prev_ra = p->trapframe->ra; // save 
+          p->prev_sp = p->trapframe->sp; 
+          p->prev_gp = p->trapframe->gp; 
+          p->prev_tp = p->trapframe->tp; 
+          p->prev_t0 = p->trapframe->t0; 
+          p->prev_t1 = p->trapframe->t1; 
+          p->prev_t2 = p->trapframe->t2; 
+          p->prev_s0 = p->trapframe->s0; 
+          p->prev_s1 = p->trapframe->s1; 
+          p->prev_a1 = p->trapframe->a1; 
+          p->prev_a2 = p->trapframe->a2; 
+          p->prev_a3 = p->trapframe->a3; 
+          p->prev_a4 = p->trapframe->a4; 
+          p->prev_a5 = p->trapframe->a5; 
+          p->prev_a6 = p->trapframe->a6; 
+          p->prev_a7 = p->trapframe->a7; 
+          p->prev_s2 = p->trapframe->s2; 
+          p->prev_s3 = p->trapframe->s3; 
+          p->prev_s4 = p->trapframe->s4; 
+          p->prev_s5 = p->trapframe->s5; 
+          p->prev_s6 = p->trapframe->s6; 
+          p->prev_s7 = p->trapframe->s7; 
+          p->prev_s8 = p->trapframe->s8; 
+          p->prev_s9 = p->trapframe->s9; 
+          p->prev_s10 = p->trapframe->s10; 
+          p->prev_s11 = p->trapframe->s11; 
+          p->prev_t3 = p->trapframe->t3; 
+          p->prev_t4 = p->trapframe->t4; 
+          p->prev_t5 = p->trapframe->t5; 
+          p->prev_t6 = p->trapframe->t6; 
+          // set saved pc to the target func
+          p->trapframe->epc = (uint64)p->handler_func_ptr;
+          p->exitFlag = 0;
+        }
+    }
+
+  }
 
   usertrapret();
 }

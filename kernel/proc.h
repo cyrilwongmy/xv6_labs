@@ -103,4 +103,40 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  int intervals;               // store the alarm interval; Lab4 P3
+  void (*handler_func_ptr)();  // pointer to the handler function; Lab4 P3
+  int passed_ticks;            // Passed tick since the last call; Lab4 P3
+  uint64 prev_epc;             // save prev pc for Lab4 P3 sigreturn
+  uint64 prev_a0;             // save prev pc for Lab4 P3 sigreturn
+  uint64 prev_ra;
+  uint64  prev_sp;
+  uint64  prev_gp;
+  uint64  prev_tp;
+  uint64  prev_t0;
+  uint64  prev_t1;
+  uint64  prev_t2;
+  uint64  prev_s0;
+  uint64  prev_s1;
+  uint64  prev_a1;
+  uint64  prev_a2;
+  uint64  prev_a3;
+  uint64  prev_a4;
+  uint64  prev_a5;
+  uint64  prev_a6;
+  uint64  prev_a7;
+  uint64  prev_s2;
+  uint64  prev_s3;
+  uint64  prev_s4;
+  uint64  prev_s5;
+  uint64  prev_s6;
+  uint64  prev_s7;
+  uint64  prev_s8;
+  uint64  prev_s9;
+  uint64  prev_s10;
+  uint64  prev_s11;
+  uint64  prev_t3;
+  uint64  prev_t4;
+  uint64  prev_t5;
+  uint64  prev_t6;
+  int     exitFlag;
 };

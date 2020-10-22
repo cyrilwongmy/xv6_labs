@@ -1,0 +1,16 @@
+1. a0, a1, a2
+2. 
+  the call to function f in main is in the address of 0x52
+  the call to g is 0x34
+3. the function printf is located at 0xa38
+4. 0x38
+5. 
+HE110 World
+  5.q2 skipped
+need change 57616 to 0x887
+6. y = 1
+
+It's taken from the stack. You are telling printf that it can fetch 2 arguments from the stack but you only provide 1 argument. 
+Printf doesn't know about this and takes the next value on the stack which is most likely the value of a register saved during invocation of printf.
+
+But note: The value you get is always undefined.

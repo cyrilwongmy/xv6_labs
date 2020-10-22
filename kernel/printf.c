@@ -121,6 +121,8 @@ panic(char *s)
   printf("panic: ");
   printf(s);
   printf("\n");
+  // Lab4 Part2: add backtrace for panic
+  backtrace();
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
@@ -131,4 +133,29 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+// Lab4: trap part2
+void
+backtrace(void)
+{
+
+  // get current frame pointer, which is an address.
+  uint64 current_fp = r_fp(); // address of fp, i.e. 0x800050
+
+
+  // if fp = PGROUNDDOWN or PGROUNDUP, then it is where the kernel allocate 
+  // the page. so check whether page address is aligned or not
+  while (PGROUNDUP(current_fp) != current_fp && PGROUNDDOWN(current_fp) != current_fp)
+  {
+    // fp address - 8, get the pointer pointing to saved ra
+    // treating it as a pointer.
+    // get the saved return address, and print it
+    uint64 *current_return_address = (uint64 *)(current_fp - 8);
+    printf("%p\n", *current_return_address);
+
+    // get caller's frame pointer in current frame (current_fp - 16)
+    uint64 *current_caller_fp = (uint64 *)(current_fp - 16);
+    current_fp = *(current_caller_fp);
+  }
 }

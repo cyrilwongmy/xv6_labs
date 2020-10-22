@@ -127,6 +127,12 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // Lab4 P3
+  p->passed_ticks = 0;
+  p->handler_func_ptr = 0;
+  p->intervals = 0;
+  p->exitFlag = 1;
+
   return p;
 }
 

@@ -536,9 +536,9 @@ scheduler(void)
       }
       release(&p->lock);
     }
-    if(found == 0) {
-      kvminithart();
-    }
+    // if(found == 0) {
+    //   kvminithart();
+    // }
 #if !defined (LAB_FS)
     if(found == 0) {
       intr_on();

@@ -50,7 +50,7 @@ sys_sbrk(void)
   if (n < 0)
   {
     uvmdealloc(myproc()->pagetable, myproc()->sz, myproc()->sz + n);
-  }
+  } 
   myproc()->sz = myproc()->sz + n;
   
   // Eliminate allocation from sbrk()

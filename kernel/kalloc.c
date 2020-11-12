@@ -10,6 +10,11 @@
 #include "defs.h"
 
 void freerange(void *pa_start, void *pa_end);
+void freepage(char * pa);
+void increase_ref(void* pa, int exist);
+int decrease_ref(void* pa);
+int pa2idx(void *pa);
+void* allocpage(void);
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
@@ -21,6 +26,8 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
+  int ref_count[1<<15]; // ref count for each page
+  int used; // 不知道什么用？
 } kmem;
 
 void
@@ -28,15 +35,30 @@ kinit()
 {
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
+  memset(&kmem.ref_count, 0, sizeof(kmem.ref_count));
+  kmem.used = 0;
 }
 
+// just use to free pages in kinit time.
 void
 freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
-    kfree(p);
+    // kfree(p);
+    freepage(p);
+}
+
+
+// caller should hold lock
+// Free a pa and add back to freelisk
+void
+freepage(char * pa) {
+  memset(pa, 1, PGSIZE);
+  struct run* r = (struct run*)pa;
+  r->next = kmem.freelist;
+  kmem.freelist = r;
 }
 
 // Free the page of physical memory pointed at by v,
@@ -46,19 +68,18 @@ freerange(void *pa_start, void *pa_end)
 void
 kfree(void *pa)
 {
-  struct run *r;
+  // struct run *r;
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  // Fill with junk to catch dangling refs.
-  memset(pa, 1, PGSIZE);
-
-  r = (struct run*)pa;
-
   acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
+  if (decrease_ref(pa)) // only free pa when ref == 0
+  {
+    kmem.used--;
+    freepage(pa);
+  }
+  
   release(&kmem.lock);
 }
 
@@ -68,15 +89,54 @@ kfree(void *pa)
 void *
 kalloc(void)
 {
-  struct run *r;
-
   acquire(&kmem.lock);
-  r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+  void* page = allocpage();
 
-  if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
-  return (void*)r;
+  if(page) {
+    increase_ref(page, 0);
+  }
+
+  release(&kmem.lock);
+  return page;
+}
+
+int
+decrease_ref(void* pa) {
+  int idx = pa2idx(pa);
+  if (kmem.ref_count[idx] <= 0)
+  {
+    printf("%p should exist", pa);
+    panic("decrease_ref");
+  }
+  return --kmem.ref_count[idx] == 0;
+}
+
+void 
+increase_ref(void* pa, int exist) {
+  int idx = pa2idx(pa);
+  if(exist && kmem.ref_count[idx] <= 0) { // <= 优先级更高
+    printf("page %p should exist", pa);
+    panic("increase ref");
+  } else if(!exist && kmem.ref_count[idx] > 0) {
+    printf("page %p should not exist", pa);
+    panic("increase ref");
+  }
+  kmem.ref_count[idx]++;
+}
+
+int
+pa2idx(void *pa) {
+  return (pa - (void *)end) / PGSIZE;
+}
+
+void*
+allocpage()
+{
+  struct run* r = kmem.freelist ? kmem.freelist : 0;
+  if(r) {
+    kmem.used++;
+    kmem.freelist = r->next;
+    memset((char*)r, 5, PGSIZE);
+  }
+  return r;
 }

@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -310,8 +312,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
-  uint flags;
-  char *mem;
+  uint flags, newFlags;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -320,18 +321,43 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+
+    newFlags = flags | PTE_F;
+    newFlags &= ~PTE_W;
+    if (*pte & PTE_F || *pte & PTE_W)
+    {
+      if(0 != mappages(new, i, PGSIZE, pa, newFlags))
+        goto err;
+      // we need also adjust page perm for parent process
+      *pte = PA2PTE(pa) | newFlags;
+    } else {
+      if (0 != mappages(new, i, PGSIZE, (uint64)pa, flags))
+      {
+        goto err;
+      }
     }
+    increase_ref((void *)pa, 1);
   }
   return 0;
 
  err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
+ // i / PGSIZE or i ?
+  // uvmunmap(new, 0, i / PGSIZE, 1);
+  uvmunmap(new, 0, i, 1);
+  for (int j = 0; j <= i; j+=PGSIZE)
+  {
+    pte = walk(old, j, 0);
+    flags = PTE_FLAGS(*pte);
+    if(flags & PTE_F) {
+      flags = (flags & (~PTE_F)) | PTE_W;
+      pa = PTE2PA(*pte);
+      *pte = pa | flags;
+    }
+  }
+  
   return -1;
 }
 
@@ -355,10 +381,28 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
+  pte_t *pte;
+  // for usertests copyout
+  if(dstva > MAXVA)
+    return -1;
 
   while(len > 0){
+    
     va0 = PGROUNDDOWN(dstva);
-    pa0 = walkaddr(pagetable, va0);
+    pte = walk(pagetable, va0, 0);
+    if(0 == pte) {
+        // panic("copyout : pte should exist");
+        return -1;
+    }
+    if(*pte & PTE_F) {
+      if(cow_handler(pagetable, va0) != 0) {
+        panic("copyout : handle cow failed");
+      }
+      pa0 = walkaddr(pagetable, va0);
+    } else {
+      pa0 = walkaddr(pagetable, va0);
+    }
+
     if(pa0 == 0)
       return -1;
     n = PGSIZE - (dstva - va0);
@@ -439,4 +483,59 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+// success return 0, failure return -1
+int
+cow_handler(pagetable_t pagetable, uint64 va) {
+  if (pagetable == 0)
+  {
+    return -1;
+  }
+
+  // out of range access
+  if(myproc()->sz <= va) {
+    printf("process %d , assess %d\n", myproc()->pid, (uint64)va);
+    // printf("process size %d, stack guard %d\n", myproc()->sz, myproc()->ustackbase);
+    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), myproc()->pid);
+    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+    myproc()->killed = 1;
+    return -1;
+  }
+
+  // find corresponding pte
+  uint64 vabase = PGROUNDDOWN(va);
+  pte_t* pte;
+  if((pte = walk(pagetable, vabase, 0)) == 0)
+    return -1;
+    // panic("page should exist");
+
+  // cow pagefault situation:
+  uint flags = PTE_FLAGS(*pte);
+  if(!(flags & PTE_F && (flags & PTE_W) == 0)) {
+    return -1;
+  }
+
+  // allocate a new page and recalculate it's perm
+  void* mem = kalloc();
+  if(0 == mem) {
+    myproc()->killed = 1;
+    return -1;
+
+  }
+
+// free origin pte and page
+  memmove(mem, (void*)PTE2PA(*pte), PGSIZE);
+  kfree((void*)PTE2PA(*pte));
+  *pte = 0;
+
+  // map it
+  flags = (flags & (~PTE_F)) | PTE_W;
+  if(mappages(pagetable, vabase, PGSIZE, (uint64)mem, flags))
+    return -1;
+
+  return 0;
+
+  
+  
 }

@@ -1,0 +1,3 @@
+The reason for multiple threads that hashtable cannot put key-value correctly is that 
+put_thread() method in different threads accessing the same memory content, i.e. keys array.
+and insert() new key in put() is probably accessing the same bucket of list.

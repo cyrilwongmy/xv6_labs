@@ -322,6 +322,58 @@ sys_open(void)
     return -1;
   }
 
+	if(!(omode & O_NOFOLLOW)){
+		// follow path in the inode and find the actual soft linked file
+		char actualPath[MAXPATH];
+		int loop_depth = 0;
+		while (ip->type == T_SYMLINK && loop_depth < 10) {
+			int len = 0;
+			readi(ip, 0, (uint64)&len, 0, sizeof(int));
+			// iunlockput for last ip, we will use ip for next found inode
+			iunlockput(ip);
+
+			
+			if(len > MAXPATH) {
+				panic("Wrong symlink");
+			}
+
+			// find next inode based on path from last SYMLINK block
+			readi(ip, 0, (uint64)actualPath, sizeof(int), len + 1);
+
+			if((ip = namei(actualPath)) == 0){
+				end_op();
+				return -1;
+			}
+			// find actual file inode
+			
+			// ilock now for checking
+			ilock(ip);
+			if(ip->type == T_DIR && omode != O_RDONLY){
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+
+      if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+
+			loop_depth++;
+		}
+		// file exists, success
+		// open the file
+		if(loop_depth >= 10) {
+			// free, unlock some inode
+			iunlockput(ip);
+			end_op();
+			return -1;
+		}
+		
+	}
+	// nofollow just take it as normal file
+
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
       fileclose(f);
@@ -483,4 +535,36 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+int sys_symlink(void){
+
+  char new[MAXPATH], old[MAXPATH];
+
+  if(argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0)
+    return -1;
+
+
+  begin_op();
+
+
+	// Write a new symbolic link (targetPath) into the directory dp, similar to dirlink() fs.c
+	
+	// create a new inode that types symlink in new directory
+	struct inode* inode_symlink;
+	
+	if((inode_symlink = create(new, T_SYMLINK, 0, 0)) == 0) {
+		end_op();
+		return -1;
+	}
+
+	
+	int len = strlen(old);
+	writei(inode_symlink, 0, (uint64)&len, 0, sizeof(int));
+	writei(inode_symlink, 0, (uint64)old, sizeof(int), len + 1);
+	iupdate(inode_symlink);
+	iunlockput(inode_symlink);
+
+	end_op();
+	return 0;
 }

@@ -67,9 +67,13 @@ testsymlink(void)
   fd1 = open("/testsymlink/a", O_CREATE | O_RDWR);
   if(fd1 < 0) fail("failed to open a");
 
+	printf("MyDebug: open a file successful");
+
   r = symlink("/testsymlink/a", "/testsymlink/b");
   if(r < 0)
     fail("symlink b -> a failed");
+
+	printf("MyDebug: link b->a successful");
 
   if(write(fd1, buf, sizeof(buf)) != 4)
     fail("failed to write to a");
@@ -160,6 +164,7 @@ concur(void)
       for(i = 0; i < 100; i++){
         x = x * 1103515245 + 12345;
         if((x % 3) == 0) {
+
           symlink("/testsymlink/z", "/testsymlink/y");
           if (stat_slink("/testsymlink/y", &st) == 0) {
             m++;
